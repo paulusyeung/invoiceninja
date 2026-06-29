@@ -12,7 +12,6 @@ use Cache;
 use Closure;
 use Event;
 use Illuminate\Http\Request;
-use Input;
 use Redirect;
 use Schema;
 use Session;
@@ -39,9 +38,9 @@ class StartupCheck
         // set TRUSTED_PROXIES=* if you want to trust every proxy.
         if (isset($_ENV['TRUSTED_PROXIES'])) {
             if (env('TRUSTED_PROXIES') == '*') {
-                $request->setTrustedProxies(['127.0.0.1', $request->server->get('REMOTE_ADDR')]);
+                $request->setTrustedProxies(['127.0.0.1', $request->server->get('REMOTE_ADDR')],Request::HEADER_X_FORWARDED_ALL);
             } else{
-                $request->setTrustedProxies(array_map('trim', explode(',', env('TRUSTED_PROXIES'))));
+                $request->setTrustedProxies(array_map('trim', explode(',', env('TRUSTED_PROXIES'))),Request::HEADER_X_FORWARDED_ALL);
             }
         }
 
@@ -72,8 +71,8 @@ class StartupCheck
             $file = storage_path() . '/version.txt';
             $version = @file_get_contents($file);
             if ($version != NINJA_VERSION) {
-                if (version_compare(phpversion(), '7.0.0', '<')) {
-                    dd('Please update PHP to >= 7.0.0');
+                if (version_compare(phpversion(), '7.1.0', '<')) {
+                    dd('Please update PHP to >= 7.1.0');
                 }
                 $handle = fopen($file, 'w');
                 fwrite($handle, NINJA_VERSION);
@@ -151,8 +150,8 @@ class StartupCheck
         }
 
         // Check if we're requesting to change the account's language
-        if (Input::has('lang')) {
-            $locale = Input::get('lang');
+        if (\Request::has('lang')) {
+            $locale = \Request::input('lang');
             App::setLocale($locale);
             session([SESSION_LOCALE => $locale]);
 
@@ -172,15 +171,15 @@ class StartupCheck
 
         // Make sure the account/user localization settings are in the session
         if (Auth::check() && ! Session::has(SESSION_TIMEZONE)) {
-            Event::fire(new UserLoggedIn());
+            Event::dispatch(new UserLoggedIn());
         }
 
         // Check if the user is claiming a license (ie, additional invoices, white label, etc.)
         if (! Utils::isNinjaProd() && isset($_SERVER['REQUEST_URI'])) {
             $claimingLicense = Utils::startsWith($_SERVER['REQUEST_URI'], '/claim_license');
-            if (! $claimingLicense && Input::has('license_key') && Input::has('product_id')) {
-                $licenseKey = Input::get('license_key');
-                $productId = Input::get('product_id');
+            if (! $claimingLicense && \Request::has('license_key') && \Request::has('product_id')) {
+                $licenseKey = \Request::input('license_key');
+                $productId = \Request::input('product_id');
 
                 $url = (Utils::isNinjaDev() ? SITE_URL : NINJA_APP_URL) . "/claim_license?license_key={$licenseKey}&product_id={$productId}&get_date=true";
                 $data = trim(CurlUtils::get($url));
@@ -208,11 +207,11 @@ class StartupCheck
 
         // Check data has been cached
         $cachedTables = unserialize(CACHED_TABLES);
-        if (Input::has('clear_cache')) {
+        if (\Request::has('clear_cache')) {
             Session::flash('message', 'Cache cleared');
         }
         foreach ($cachedTables as $name => $class) {
-            if (Input::has('clear_cache') || ! Cache::has($name)) {
+            if (\Request::has('clear_cache') || ! Cache::has($name)) {
                 // check that the table exists in case the migration is pending
                 if (! Schema::hasTable((new $class())->getTable())) {
                     continue;
